@@ -1,2 +1,5 @@
-import { AuthPage } from '@/components/creatorhub-app'
-export default function Page() { return <AuthPage signup /> }
+import { SupabaseAuthPage } from '@/components/supabase-store-features'
+
+export default function Page() {
+  return <SupabaseAuthPage signup />
+}
