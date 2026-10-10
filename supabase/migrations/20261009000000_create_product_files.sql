@@ -8,6 +8,8 @@ create table if not exists public.product_files (
   created_at timestamptz not null default now()
 );
 
+create index if not exists product_files_product_id_idx on public.product_files(product_id);
+
 alter table public.product_files enable row level security;
 
 grant select, insert, update, delete on public.product_files to authenticated;
