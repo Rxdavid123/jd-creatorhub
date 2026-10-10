@@ -14,6 +14,7 @@ type Props = {
 
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif'
+const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 
 export function StorageImageUpload({ bucket, pathPrefix, value, label, onChange }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -22,7 +23,7 @@ export function StorageImageUpload({ bucket, pathPrefix, value, label, onChange 
 
   async function upload(file: File) {
     setError('')
-    if (!file.type.startsWith('image/')) return setError('Choose a PNG, JPG, WEBP, or GIF image.')
+    if (!ALLOWED_TYPES.has(file.type)) return setError('Choose a PNG, JPG, WEBP, or GIF image.')
     if (file.size > MAX_BYTES) return setError('Images must be 10 MB or smaller.')
     setBusy(true)
     const client = createClient()
@@ -44,7 +45,14 @@ export function StorageImageUpload({ bucket, pathPrefix, value, label, onChange 
     setBusy(true)
     const marker = `/${bucket}/`
     const path = value.includes(marker) ? value.split(marker)[1].split('?')[0] : ''
-    if (path) await createClient().storage.from(bucket).remove([path])
+    if (path) {
+      const { error: removeError } = await createClient().storage.from(bucket).remove([path])
+      if (removeError) {
+        setError('Unable to remove the image. Check the storage policies and try again.')
+        setBusy(false)
+        return
+      }
+    }
     onChange('')
     setBusy(false)
   }
