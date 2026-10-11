@@ -4,7 +4,7 @@ create table if not exists public.product_files (
   storage_path text not null unique,
   original_filename text not null,
   mime_type text not null,
-  file_size bigint not null check (file_size > 0),
+  file_size_bytes bigint not null check (file_size_bytes > 0),
   created_at timestamptz not null default now()
 );
 
