@@ -60,8 +60,12 @@ export function ProductFileManager({ productId }: { productId: string }) {
     if (uploadError) { setError('Unable to upload the private file. Check the storage policies and try again.'); setBusy(false); return }
     const { error: metadataError } = await client.from('product_files').insert({ product_id: productId, storage_path: storagePath, original_filename: file.name, mime_type: file.type, file_size_bytes: file.size })
     if (metadataError) {
-      await client.storage.from('product-files').remove([storagePath])
-      setError(metadataError.message.includes('does not exist') ? 'Apply the product_files migration in Supabase before adding files.' : 'The file upload was rolled back because metadata could not be saved.')
+      const { error: cleanupError } = await client.storage.from('product-files').remove([storagePath])
+      if (cleanupError) {
+        setError('Metadata could not be saved, and the uploaded private file could not be cleaned up. Remove it from Supabase Storage after fixing the database.')
+      } else {
+        setError(metadataError.message.includes('does not exist') ? 'Apply the product_files migration in Supabase before adding files.' : 'The file upload was rolled back because metadata could not be saved.')
+      }
       setBusy(false)
       return
     }
