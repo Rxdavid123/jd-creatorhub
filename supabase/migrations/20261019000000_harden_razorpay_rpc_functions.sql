@@ -81,6 +81,8 @@ set search_path = ''
 as $$
 declare
   v_payment public.payments;
+  v_order public.orders;
+  v_updated integer;
 begin
   if nullif(trim(p_provider_payment_id), '') is null
      or nullif(trim(p_provider_order_id), '') is null
@@ -91,10 +93,19 @@ begin
     return false;
   end if;
 
-  select * into v_payment
-    from public.payments
-   where provider = 'razorpay'
-     and provider_order_id = p_provider_order_id
+  select o.* into v_order
+    from public.orders as o
+   where o.id = p_order_id
+   for update;
+
+  if not found or v_order.status = 'cancelled' then
+    return false;
+  end if;
+
+  select p.* into v_payment
+    from public.payments as p
+   where p.provider = 'razorpay'
+     and p.provider_order_id = p_provider_order_id
    for update;
 
   if not found
@@ -105,24 +116,29 @@ begin
     return false;
   end if;
 
-  insert into public.payments (
-    order_id, provider, provider_order_id, provider_payment_id,
-    amount_minor, currency, status, captured_at
-  ) values (
-    p_order_id, 'razorpay', p_provider_order_id, p_provider_payment_id,
-    p_amount_minor, p_currency, 'captured', pg_catalog.now()
-  )
-  on conflict (provider, provider_order_id) do update
-    set provider_payment_id = excluded.provider_payment_id,
-        status = 'captured',
-        captured_at = coalesce(public.payments.captured_at, excluded.captured_at),
-        updated_at = pg_catalog.now();
+  if v_payment.status = 'captured' then
+    return v_payment.provider_payment_id = p_provider_payment_id;
+  end if;
+
+  if v_payment.provider_payment_id is not null
+     and v_payment.provider_payment_id <> p_provider_payment_id then
+    return false;
+  end if;
+
+  update public.payments
+     set provider_payment_id = p_provider_payment_id,
+         status = 'captured',
+         captured_at = coalesce(captured_at, pg_catalog.now()),
+         updated_at = pg_catalog.now()
+   where id = v_payment.id;
 
   update public.orders
      set status = 'processing', updated_at = pg_catalog.now()
-   where id = p_order_id and status <> 'cancelled';
+   where id = p_order_id
+     and status <> 'cancelled';
 
-  return true;
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
 end;
 $$;
 
@@ -137,6 +153,8 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_payment public.payments;
 begin
   if nullif(trim(p_provider_order_id), '') is null
      or p_amount_minor is null
@@ -156,11 +174,23 @@ begin
     return false;
   end if;
 
+  select p.* into v_payment
+    from public.payments as p
+   where p.provider = 'razorpay'
+     and p.provider_order_id = p_provider_order_id
+   for update;
+
+  if found then
+    return v_payment.order_id = p_order_id
+       and v_payment.amount_minor = p_amount_minor
+       and v_payment.currency = p_currency;
+  end if;
+
   insert into public.payments (
     order_id, provider, provider_order_id, amount_minor, currency
   ) values (
     p_order_id, 'razorpay', p_provider_order_id, p_amount_minor, p_currency
-  ) on conflict (provider, provider_order_id) do nothing;
+  );
 
   return true;
 end;
@@ -195,14 +225,14 @@ end;
 $$;
 
 -- Keep public checkout available, but keep all payment mutation RPCs server-only.
-revoke all on function public.create_public_checkout_order(uuid, integer, text, text) from public;
+revoke all on function public.create_public_checkout_order(uuid, integer, text, text) from public, anon, authenticated;
 grant execute on function public.create_public_checkout_order(uuid, integer, text, text) to anon, authenticated, service_role;
 
-revoke all on function public.record_payment_created(uuid, text, bigint, text) from public;
+revoke all on function public.record_payment_created(uuid, text, bigint, text) from public, anon, authenticated;
 grant execute on function public.record_payment_created(uuid, text, bigint, text) to service_role;
 
-revoke all on function public.mark_order_paid(uuid, text, text, bigint, text) from public;
+revoke all on function public.mark_order_paid(uuid, text, text, bigint, text) from public, anon, authenticated;
 grant execute on function public.mark_order_paid(uuid, text, text, bigint, text) to service_role;
 
-revoke all on function public.record_payment_failed(text, text, text) from public;
+revoke all on function public.record_payment_failed(text, text, text) from public, anon, authenticated;
 grant execute on function public.record_payment_failed(text, text, text) to service_role;
