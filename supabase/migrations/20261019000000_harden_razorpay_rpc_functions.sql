@@ -218,7 +218,12 @@ begin
          updated_at = pg_catalog.now()
    where provider = 'razorpay'
      and provider_order_id = p_provider_order_id
-     and status not in ('captured', 'cancelled');
+     and status not in ('captured', 'cancelled')
+     and (
+       p_provider_payment_id is null
+       or provider_payment_id is null
+       or provider_payment_id = p_provider_payment_id
+     );
 
   return found;
 end;
