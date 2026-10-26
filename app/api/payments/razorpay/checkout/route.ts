@@ -11,7 +11,7 @@ function admin() {
 function razorpayAuth() {
   const id = process.env.RAZORPAY_KEY_ID
   const secret = process.env.RAZORPAY_KEY_SECRET
-  if (!id || !secret) throw new Error('Razorpay test credentials are not configured.')
+  if (!id || !secret) throw new Error('Payment service is not configured. Please try again later.')
   return { id, header: `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}` }
 }
 
