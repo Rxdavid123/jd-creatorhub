@@ -32,6 +32,12 @@ export async function POST(request: Request) {
     if (!payment) return NextResponse.json({ error: 'Payment record not found.' }, { status: 400 })
     const { data, error } = await client.rpc('mark_order_paid', { p_order_id: body.internal_order_id, p_provider_payment_id: body.razorpay_payment_id, p_provider_order_id: body.razorpay_order_id, p_amount_minor: payment.amount_minor, p_currency: payment.currency })
     if (error || data !== true) return NextResponse.json({ error: 'Payment could not be verified.' }, { status: 400 })
-    return NextResponse.json({ ok: true, orderId: body.internal_order_id })
+    const { data: orderItem } = await client.from('order_items').select('product_id').eq('order_id', body.internal_order_id).maybeSingle()
+    if (!orderItem?.product_id) return NextResponse.json({ error: 'Payment verified, but the purchased product could not be found.' }, { status: 500 })
+    const downloadToken = crypto.randomBytes(32).toString('hex')
+    const tokenHash = crypto.createHash('sha256').update(downloadToken).digest('hex')
+    const { error: tokenError } = await client.from('download_tokens').insert({ token_hash: tokenHash, order_id: body.internal_order_id, product_id: orderItem.product_id, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+    if (tokenError) return NextResponse.json({ error: 'Payment verified, but secure delivery could not be prepared.' }, { status: 500 })
+    return NextResponse.json({ ok: true, orderId: body.internal_order_id, productId: orderItem.product_id, downloadToken })
   } catch { return NextResponse.json({ error: 'Payment verification failed.' }, { status: 500 }) }
 }
