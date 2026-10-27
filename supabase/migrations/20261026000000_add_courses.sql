@@ -1,3 +1,4 @@
+-- Requires the orders/payments migrations to run before this migration.
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(), owner_id uuid not null references auth.users(id) on delete cascade,
   title text not null check (char_length(title) between 1 and 160), slug text not null unique check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
@@ -15,7 +16,7 @@ create table if not exists public.course_resources (
   id uuid primary key default gen_random_uuid(), lesson_id uuid not null references public.course_lessons(id) on delete cascade, name text not null, storage_path text not null, mime_type text, position integer not null default 0 check (position >= 0), unique(lesson_id, storage_path)
 );
 create table if not exists public.course_enrollments (
-  id uuid primary key default gen_random_uuid(), course_id uuid not null references public.courses(id) on delete cascade, student_id uuid not null references auth.users(id) on delete cascade, order_id uuid references public.orders(id) on delete set null, payment_id uuid references public.razorpay_payments(id) on delete set null, payment_status text not null default 'captured' check (payment_status in ('free','captured','refunded','cancelled')), enrolled_at timestamptz not null default now(), unique(course_id, student_id)
+  id uuid primary key default gen_random_uuid(), course_id uuid not null references public.courses(id) on delete cascade, student_id uuid not null references auth.users(id) on delete cascade, order_id uuid references public.orders(id) on delete set null, payment_id uuid references public.payments(id) on delete set null, payment_status text not null default 'captured' check (payment_status in ('free','captured','refunded','cancelled')), enrolled_at timestamptz not null default now(), unique(course_id, student_id)
 );
 create table if not exists public.course_lesson_progress (
   id uuid primary key default gen_random_uuid(), enrollment_id uuid not null references public.course_enrollments(id) on delete cascade, lesson_id uuid not null references public.course_lessons(id) on delete cascade, completed_at timestamptz, updated_at timestamptz not null default now(), unique(enrollment_id, lesson_id)

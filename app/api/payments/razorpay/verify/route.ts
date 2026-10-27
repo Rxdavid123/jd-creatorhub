@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
-import { grantVerifiedCourseEnrollment } from '@/lib/course-enrollment'
+import { courseMappingForProduct, grantVerifiedCourseEnrollment } from '@/lib/course-enrollment'
 
 function admin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -35,7 +35,13 @@ export async function POST(request: Request) {
     if (error || data !== true) return NextResponse.json({ error: 'Payment could not be verified.' }, { status: 400 })
     const { data: orderItem } = await client.from('order_items').select('product_id').eq('order_id', body.internal_order_id).maybeSingle()
     if (!orderItem?.product_id) return NextResponse.json({ error: 'Payment verified, but the purchased product could not be found.' }, { status: 500 })
-    await grantVerifiedCourseEnrollment(client, body.internal_order_id, body.razorpay_payment_id)
+    const mapping = await courseMappingForProduct(client, orderItem.product_id)
+    if (mapping) {
+      const { count: itemCount, error: countError } = await client.from('order_items').select('id', { count: 'exact', head: true }).eq('order_id', body.internal_order_id)
+      if (countError || itemCount !== 1) return NextResponse.json({ error: 'Course orders must contain exactly one product.' }, { status: 400 })
+      const enrollment = await grantVerifiedCourseEnrollment(client, body.internal_order_id, body.razorpay_payment_id)
+      if (!enrollment.enrollmentId) return NextResponse.json({ error: 'Payment verified, but course access could not be granted.' }, { status: 409 })
+    }
     const downloadToken = crypto.randomBytes(32).toString('hex')
     const tokenHash = crypto.createHash('sha256').update(downloadToken).digest('hex')
     const { error: tokenError } = await client.from('download_tokens').insert({ token_hash: tokenHash, order_id: body.internal_order_id, product_id: orderItem.product_id, expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
