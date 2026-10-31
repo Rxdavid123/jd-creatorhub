@@ -16,7 +16,7 @@ function coursePayload(body: unknown) {
 export async function GET() {
   const user = await currentUser()
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
-  const { data, error } = await (await createClient()).from('courses').select('*,course_sections(id,course_lessons(id)),course_product_links(product_id)').eq('owner_id', user.id).neq('status', 'deleted').order('updated_at', { ascending: false })
+  const { data, error } = await (await createClient()).from('courses').select('*,course_sections(id,course_lessons(id)),course_product_links(product_id,products(id,name,price,currency,status))').eq('owner_id', user.id).neq('status', 'deleted').order('updated_at', { ascending: false })
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ courses: data || [] })
 }
 

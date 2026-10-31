@@ -40,6 +40,9 @@ export async function DELETE(request: Request) {
   const body = json(await request.json().catch(() => null))
   const courseId = typeof body.courseId === 'string' ? body.courseId : ''
   if (!courseId) return NextResponse.json({ error: 'Course is required.' }, { status: 400 })
-  const { error } = await (await createClient()).from('course_product_links').delete().eq('course_id', courseId)
+  const client = await createClient()
+  const { data: course } = await client.from('courses').select('id').eq('id', courseId).eq('owner_id', user.id).maybeSingle()
+  if (!course) return NextResponse.json({ error: 'Course not found.' }, { status: 404 })
+  const { error } = await client.from('course_product_links').delete().eq('course_id', courseId)
   return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ ok: true })
 }
