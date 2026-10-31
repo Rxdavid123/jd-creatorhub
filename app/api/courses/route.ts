@@ -17,7 +17,12 @@ export async function GET() {
   const user = await currentUser()
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
   const { data, error } = await (await createClient()).from('courses').select('*,course_sections(id,course_lessons(id)),course_product_links(product_id,products(id,name,price,currency,status))').eq('owner_id', user.id).neq('status', 'deleted').order('updated_at', { ascending: false })
-  return error ? NextResponse.json({ error: error.message }, { status: 400 }) : NextResponse.json({ courses: data || [] })
+  if (error) {
+    console.error('[v0] courses list failed', { userId: user.id, code: error.code, message: error.message, details: error.details, hint: error.hint })
+    return NextResponse.json({ error: 'Unable to load your courses.', diagnostic: { code: error.code } }, { status: 400 })
+  }
+  console.info('[v0] courses list', { userId: user.id, count: data?.length || 0, linkedCount: data?.filter(course => Array.isArray(course.course_product_links) && course.course_product_links.length > 0).length || 0 })
+  return NextResponse.json({ courses: data || [] })
 }
 
 export async function POST(request: Request) {

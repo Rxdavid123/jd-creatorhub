@@ -24,11 +24,23 @@ export async function POST(request: Request) {
     client.from('courses').select('id,status,owner_id,price_minor,currency').eq('id', courseId).eq('owner_id', user.id).maybeSingle(),
     client.from('products').select('id,price,currency,status,store_id,stores!inner(user_id)').eq('id', productId).eq('stores.user_id', user.id).maybeSingle(),
   ])
-  if (courseError || productError) return NextResponse.json({ error: 'Unable to verify course and product ownership.' }, { status: 400 })
-  if (!course || course.status !== 'published') return NextResponse.json({ error: 'Only your published courses can be linked.' }, { status: 400 })
-  if (!product || product.status !== 'published') return NextResponse.json({ error: 'Only your published products can be linked.' }, { status: 400 })
+  if (courseError || productError) {
+    console.error('[v0] course product ownership lookup failed', { userId: user.id, courseId, productId, courseCode: courseError?.code, courseMessage: courseError?.message, productCode: productError?.code, productMessage: productError?.message })
+    return NextResponse.json({ error: 'Unable to verify course and product ownership.', diagnostic: { courseCode: courseError?.code, productCode: productError?.code } }, { status: 400 })
+  }
+  if (!course || course.status !== 'published') {
+    console.info('[v0] link rejected: course not published or not owned', { userId: user.id, courseId, courseOwnerId: course?.owner_id, courseStatus: course?.status })
+    return NextResponse.json({ error: 'Only your published courses can be linked.' }, { status: 400 })
+  }
+  if (!product || product.status !== 'published') {
+    console.info('[v0] link rejected: product not published or not owned', { userId: user.id, productId, productStoreId: product?.store_id, productStatus: product?.status })
+    return NextResponse.json({ error: 'Only your published products can be linked.' }, { status: 400 })
+  }
   const productMinor = product.price == null ? 0 : Math.round(Number(product.price) * 100)
-  if (!Number.isFinite(productMinor) || productMinor !== Number(course.price_minor) || product.currency.toUpperCase() !== course.currency.toUpperCase()) return NextResponse.json({ error: 'Course price and currency must match the product.' }, { status: 400 })
+  if (!Number.isFinite(productMinor) || productMinor !== Number(course.price_minor) || product.currency.toUpperCase() !== course.currency.toUpperCase()) {
+    console.info('[v0] link rejected: price or currency mismatch', { userId: user.id, courseId, productId, coursePriceMinor: Number(course.price_minor), productPriceMinor: productMinor, courseCurrency: course.currency, productCurrency: product.currency })
+    return NextResponse.json({ error: `Price/currency mismatch. Course: ${course.currency} ${Number(course.price_minor) / 100}; product: ${product.currency} ${Number(product.price ?? 0)}.` }, { status: 400 })
+  }
   const { data, error } = await client.from('course_product_links').insert({ course_id: courseId, product_id: productId }).select().single()
   if (error) return NextResponse.json({ error: error.code === '23505' ? 'This course or product is already linked.' : error.message }, { status: 400 })
   return NextResponse.json({ link: data }, { status: 201 })
