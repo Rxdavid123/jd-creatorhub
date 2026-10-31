@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+const api = fs.readFileSync('app/api/courses/route.ts', 'utf8')
+const links = fs.readFileSync('app/api/courses/links/route.ts', 'utf8')
+const page = fs.readFileSync('app/dashboard/courses/page.tsx', 'utf8')
+assert.match(api, /course_product_links\(product_id,products\(id,name,price,currency,status\)\)/)
+assert.match(page, /Product linked/)
+assert.match(page, /Link product/)
+assert.match(page, /Unlink product/)
+assert.match(links, /eq\('owner_id', user\.id\)/)
+assert.match(links, /23505/)
+console.log('course product linking dashboard checks passed')
