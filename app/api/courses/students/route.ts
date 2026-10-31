@@ -1,0 +1,4 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { currentUser } from '@/lib/courses'
+export async function GET(request: Request) { const user = await currentUser(); if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 }); const courseId = new URL(request.url).searchParams.get('courseId'); if (!courseId) return NextResponse.json({ error: 'Course is required.' }, { status: 400 }); const client = await createClient(); const { data, error } = await client.from('course_enrollments').select('id,student_id,enrolled_at,payment_status,courses!inner(owner_id)').eq('course_id', courseId).eq('courses.owner_id', user.id).order('enrolled_at', { ascending: false }); return error ? NextResponse.json({ error: 'Unable to load students.' }, { status: 400 }) : NextResponse.json({ students: data || [] }) }
