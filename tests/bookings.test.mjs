@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+const migration = fs.readFileSync('supabase/migrations/20261116000000_add_bookings.sql', 'utf8')
+const publicRoute = fs.readFileSync('app/api/bookings/public/route.ts', 'utf8')
+const dashboard = fs.readFileSync('app/dashboard/bookings/page.tsx', 'utf8')
+const nav = fs.readFileSync('components/creatorhub-app.tsx', 'utf8')
+assert.match(migration, /create table if not exists public\.booking_services/)
+assert.match(migration, /create table if not exists public\.bookings/)
+assert.match(migration, /create or replace function public\.create_public_booking/)
+assert.match(migration, /pg_advisory_xact_lock/)
+assert.match(migration, /alter table public\.bookings enable row level security/)
+assert.match(publicRoute, /create_public_booking/)
+assert.match(publicRoute, /service_unavailable/)
+assert.match(dashboard, /Confirm/)
+assert.match(dashboard, /Cancel/)
+assert.match(nav, /Bookings.*dashboard\/bookings/)
+console.log('bookings invariants passed')

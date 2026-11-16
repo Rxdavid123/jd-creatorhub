@@ -1,0 +1,6 @@
+export type BookingService = { id: string; store_id: string; creator_id: string; slug: string; name: string; description: string; duration_minutes: number; buffer_minutes: number; price_minor: number; currency: string; location_type: string; location_details: string | null; min_notice_minutes: number; max_advance_days: number; cancellation_notice_hours: number; timezone: string; status: string }
+export type Availability = { weekday: number; start_time: string; end_time: string; enabled: boolean }
+export function isoDate(value: string, timezone: string) { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value)); return `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}-${parts.find(p => p.type === 'day')?.value}` }
+export function displayTime(value: string, timezone: string) { return new Intl.DateTimeFormat('en-US', { timeZone: timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) }
+export function validateSlug(value: string) { return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) }
+export function slotLabel(value: string, timezone: string) { return new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(value)) }
