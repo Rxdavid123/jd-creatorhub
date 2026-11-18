@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
+import { deliverBookingNotificationsForBooking } from '@/lib/booking-email-delivery'
 import { zonedDateTimeToUtc, bookingEmailPattern } from '@/lib/bookings'
 import {
   buildPublicBookingConfirmation,
@@ -164,6 +165,21 @@ export async function POST(request: Request) {
         serviceId,
       })
       return errorResponse('CONFIRMATION_UNAVAILABLE', 'We could not create a confirmation link. Please contact the service owner.', 500)
+    }
+
+    const bookingId = typeof confirmation.booking.id === 'string' ? confirmation.booking.id : null
+    if (bookingId) {
+      try {
+        after(async () => {
+          try {
+            await deliverBookingNotificationsForBooking(bookingId, ['confirmation', 'new_booking'])
+          } catch {
+            console.error('[booking-email] post-booking dispatch failed', { bookingId })
+          }
+        })
+      } catch {
+        console.error('[booking-email] post-booking callback could not be scheduled', { bookingId })
+      }
     }
 
     return NextResponse.json(confirmation, { status: 201 })
