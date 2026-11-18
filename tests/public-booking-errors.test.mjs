@@ -58,6 +58,10 @@ describe('public booking submission outcomes', () => {
   it('keeps database failures safe for the visitor and diagnostic details private', () => {
     const internal = 'permission denied for relation bookings'
     const failure = resolvePublicBookingRpcError({ code: '42501', message: internal })
+    const undefinedFunction = resolvePublicBookingRpcError({
+      code: '42883',
+      message: 'function gen_random_bytes(integer) does not exist',
+    })
     const diagnostic = getSafeBookingFailure(
       { code: '42501', message: `${internal}: jane@example.com +1 (415) 555-0199` },
       ['Jane Doe'],
@@ -65,6 +69,8 @@ describe('public booking submission outcomes', () => {
 
     assert.equal(failure.status, 503)
     assert.equal(failure.message.includes(internal), false)
+    assert.equal(undefinedFunction.status, 503)
+    assert.doesNotMatch(undefinedFunction.message, /gen_random_bytes/)
     assert.equal(diagnostic.code, '42501')
     assert.match(diagnostic.message, /permission denied for relation bookings/)
     assert.doesNotMatch(diagnostic.message, /jane@example\.com|415|Jane Doe/i)
