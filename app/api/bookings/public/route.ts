@@ -1,9 +1,25 @@
 import { NextResponse } from 'next/server'
 import { zonedDateTimeToUtc, bookingEmailPattern } from '@/lib/bookings'
+import {
+  buildPublicBookingConfirmation,
+  getSafeBookingFailure,
+  resolvePublicBookingRpcError,
+} from '@/lib/public-booking-errors'
 import { createClient } from '@/lib/supabase/server'
 
 function errorResponse(code: string, error: string, status: number) {
   return NextResponse.json({ code, error }, { status })
+}
+
+function logDatabaseFailure(stage: string, error: unknown, serviceId: string, sensitiveValues: string[] = []) {
+  const safeFailure = getSafeBookingFailure(error, sensitiveValues)
+  console.error('[bookings] Supabase operation failed', {
+    stage,
+    category: 'database_failure',
+    code: safeFailure.code,
+    message: safeFailure.message,
+    serviceId,
+  })
 }
 
 function isCalendarDate(value: string) {
@@ -71,12 +87,33 @@ export async function POST(request: Request) {
     return errorResponse('INVALID_APPOINTMENT', 'Please choose a valid service, date, and available time.', 400)
   }
 
-  const client = await createClient()
-  const { data: service, error: serviceError } = await client.from('booking_services')
-    .select('id,timezone').eq('id', serviceId).eq('status', 'published').maybeSingle()
+  const phone = typeof body.customerPhone === 'string' ? body.customerPhone.trim() : ''
+  const note = typeof body.customerNote === 'string' ? body.customerNote.trim() : ''
+  const sensitiveValues = [customerName, customerEmail, phone, note]
+
+  let client: Awaited<ReturnType<typeof createClient>>
+  try {
+    client = await createClient()
+  } catch (error) {
+    logDatabaseFailure('create_client', error, serviceId, sensitiveValues)
+    return errorResponse('BOOKING_TEMPORARILY_UNAVAILABLE', 'We could not verify this service right now. Please refresh and try again.', 503)
+  }
+
+  let service: { id: string; timezone: string } | null = null
+  let serviceError: { code?: string | null; message?: string | null } | null = null
+  try {
+    const lookup = await client.from('booking_services')
+      .select('id,timezone').eq('id', serviceId).eq('status', 'published').maybeSingle()
+    service = lookup.data
+    serviceError = lookup.error
+  } catch (error) {
+    logDatabaseFailure('service_lookup', error, serviceId, sensitiveValues)
+    return errorResponse('SERVICE_LOOKUP_FAILED', 'We could not verify this service right now. Please refresh and try again.', 503)
+  }
+
   if (serviceError) {
-    console.error('[bookings] service lookup failed', { category: 'service_lookup', code: serviceError.code })
-    return errorResponse('SERVICE_LOOKUP_FAILED', 'We could not verify this service. Please try again.', 500)
+    logDatabaseFailure('service_lookup', serviceError, serviceId, sensitiveValues)
+    return errorResponse('SERVICE_LOOKUP_FAILED', 'We could not verify this service right now. Please refresh and try again.', 503)
   }
   if (!service) return errorResponse('SERVICE_UNAVAILABLE', 'This service is no longer available.', 404)
   if (timezone !== service.timezone) {
@@ -92,8 +129,6 @@ export async function POST(request: Request) {
     return errorResponse('INVALID_APPOINTMENT', 'Please choose a valid service, date, and available time.', 400)
   }
 
-  const phone = typeof body.customerPhone === 'string' ? body.customerPhone.trim() : ''
-  const note = typeof body.customerNote === 'string' ? body.customerNote.trim() : ''
   try {
     const { data, error } = await client.rpc('create_public_booking', {
       p_service_id: serviceId,
@@ -105,42 +140,35 @@ export async function POST(request: Request) {
     })
 
     if (error) {
-      const sqlMessage = error.message.trim()
-      const knownErrors: Record<string, { code: string; message: string; status: number }> = {
-        service_unavailable: { code: 'SERVICE_UNAVAILABLE', message: 'This service is no longer available.', status: 404 },
-        invalid_customer: { code: 'INVALID_CUSTOMER', message: 'Please check your name and email address.', status: 400 },
-        outside_booking_window: { code: 'OUTSIDE_BOOKING_WINDOW', message: 'Choose a time within the booking window.', status: 400 },
-        outside_availability: { code: 'OUTSIDE_AVAILABILITY', message: 'That time is outside working hours.', status: 400 },
-        blocked_date: { code: 'BLOCKED_DATE', message: 'That date is unavailable.', status: 400 },
-        blocked_time: { code: 'BLOCKED_TIME', message: 'That time is blocked.', status: 400 },
-        slot_taken: { code: 'SLOT_CONFLICT', message: 'That time was just booked. Choose another slot.', status: 409 },
+      const failure = resolvePublicBookingRpcError(error)
+      const context = {
+        stage: 'create_public_booking',
+        category: failure.code,
+        code: error.code,
+        message: getSafeBookingFailure(error, sensitiveValues).message,
+        serviceId,
       }
-      const known = knownErrors[sqlMessage]
-      if (known) {
-        console.warn('[bookings] RPC rejected booking', { category: known.code, code: error.code })
-        return errorResponse(known.code, known.message, known.status)
+      if (failure.status >= 500) {
+        console.error('[bookings] Supabase RPC failed', context)
+      } else {
+        console.warn('[bookings] Supabase RPC rejected booking', context)
       }
-      if (error.code === '23514') {
-        console.error('[bookings] database constraint rejected booking', { category: 'database_constraint', code: error.code })
-        return errorResponse('BOOKING_DETAILS_REJECTED', 'Please check your booking details and try again.', 400)
-      }
-      if (error.code === '23505') {
-        console.warn('[bookings] booking slot conflict', { category: 'slot_conflict', code: error.code })
-        return errorResponse('SLOT_CONFLICT', 'That time was just booked. Choose another slot.', 409)
-      }
-      console.error('[bookings] RPC invocation failed', { category: 'rpc_failure', code: error.code })
-      return errorResponse('BOOKING_FAILED', 'We could not create this booking. Please try again.', 500)
+      return errorResponse(failure.code, failure.message, failure.status)
     }
 
-    const booking = Array.isArray(data) ? data[0] : data
-    if (!booking || typeof booking.public_token !== 'string' || !booking.public_token) {
-      console.error('[bookings] confirmation token missing', { category: 'confirmation_token_missing' })
+    const confirmation = buildPublicBookingConfirmation(data)
+    if (!confirmation) {
+      console.error('[bookings] confirmation token missing', {
+        stage: 'create_public_booking',
+        category: 'confirmation_token_missing',
+        serviceId,
+      })
       return errorResponse('CONFIRMATION_UNAVAILABLE', 'We could not create a confirmation link. Please contact the service owner.', 500)
     }
 
-    return NextResponse.json({ booking, confirmationUrl: `/booking/${booking.public_token}` }, { status: 201 })
-  } catch {
-    console.error('[bookings] public creation failed', { category: 'unexpected_rpc_failure' })
-    return errorResponse('BOOKING_FAILED', 'We could not create this booking. Please try again.', 500)
+    return NextResponse.json(confirmation, { status: 201 })
+  } catch (error) {
+    logDatabaseFailure('create_public_booking', error, serviceId, sensitiveValues)
+    return errorResponse('BOOKING_TEMPORARILY_UNAVAILABLE', "We couldn't complete this booking right now. Please try again shortly or contact the service owner.", 503)
   }
 }
