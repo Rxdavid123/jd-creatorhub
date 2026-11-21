@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import { isoDate, zonedDateTimeToUtc } from '../lib/bookings.ts'
+import { normalizeAvailabilityIntervals, normalizeAvailabilityResponse, normalizeTime } from '../lib/booking-availability.ts'
 
 const migration = fs.readFileSync('supabase/migrations/20261121100000_creator_booking_availability.sql', 'utf8')
 const settings = fs.readFileSync('components/booking/availability-settings.tsx', 'utf8')
@@ -26,7 +27,7 @@ test('supports multiple weekly windows without replacing the existing availabili
   assert.match(migration, /drop constraint if exists booking_availability_service_id_weekday_key/)
   assert.match(slots, /\.order\('start_time'\)/)
   assert.match(settings, /Add interval/)
-  assert.match(api, /Working intervals on the same day cannot overlap/)
+  assert.match(fs.readFileSync('lib/booking-availability.ts', 'utf8'), /Working intervals on the same day cannot overlap/)
 })
 
 test('booking rules, blocked dates and time ranges are checked by server routes', () => {
@@ -96,6 +97,53 @@ test('blocked dates and blocked times are enforced for bookings and reschedules'
     assert.match(source, /public\.booking_blocked_dates[\s\S]*blocked_date = local_start::date/)
     assert.match(source, /public\.booking_time_blocks[\s\S]*starts_at < [\s\S]*ends_at >/)
   }
+})
+
+test('PostgreSQL time values and UI time values normalize to HH:MM for saving', () => {
+  const { rows, error } = normalizeAvailabilityIntervals([
+    { weekday: 1, start_time: '09:00:00', end_time: '17:00:00', enabled: true },
+    { weekday: 2, start_time: '09:00', end_time: '17:00', enabled: true },
+  ])
+  assert.equal(error, null)
+  assert.deepEqual(rows.map(({ start_time, end_time }) => [start_time, end_time]), [['09:00', '17:00'], ['09:00', '17:00']])
+  assert.equal(normalizeTime('09:00:00.123456'), '09:00')
+})
+
+test('invalid hours, minutes, seconds, and malformed times are rejected', () => {
+  for (const value of ['25:00', '09:75', '09:00:60', '9:00', '09:0', '09:00:00x', '']) {
+    assert.equal(normalizeTime(value), null, `${value} must be invalid`)
+    const { error } = normalizeAvailabilityIntervals([{ weekday: 1, start_time: value, end_time: '17:00', enabled: true }])
+    assert.match(error || '', /valid weekday and end after its start/)
+  }
+})
+
+test('start time must precede end time after normalization', () => {
+  const { error } = normalizeAvailabilityIntervals([{ weekday: 1, start_time: '17:00:00', end_time: '09:00:00', enabled: true }])
+  assert.match(error || '', /end after its start/)
+})
+
+test('overlapping weekday intervals are rejected and multiple disjoint intervals are accepted', () => {
+  const overlapping = normalizeAvailabilityIntervals([
+    { weekday: 1, start_time: '09:00:00', end_time: '12:00:00', enabled: true },
+    { weekday: 1, start_time: '11:59', end_time: '17:00', enabled: true },
+  ])
+  assert.match(overlapping.error || '', /cannot overlap/)
+
+  const separate = normalizeAvailabilityIntervals([
+    { weekday: 1, start_time: '09:00:00', end_time: '12:00:00', enabled: true },
+    { weekday: 1, start_time: '13:00', end_time: '17:00:00', enabled: true },
+  ])
+  assert.equal(separate.error, null)
+  assert.equal(separate.rows.length, 2)
+})
+
+test('GET and PUT response rows are always normalized to HH:MM', () => {
+  const rows = normalizeAvailabilityResponse([
+    { id: 'a', weekday: 1, start_time: '09:00:00', end_time: '17:00:00.000000', enabled: true },
+  ])
+  assert.deepEqual(rows?.map(({ start_time, end_time }) => [start_time, end_time]), [['09:00', '17:00']])
+  assert.equal(normalizeAvailabilityResponse([{ start_time: 'bad', end_time: '17:00' }]), null)
+  assert.equal((api.match(/normalizeAvailabilityResponse\(data \|\| \[\]\)/g) || []).length, 2)
 })
 
 test('timezone conversion keeps local calendar boundaries explicit', () => {

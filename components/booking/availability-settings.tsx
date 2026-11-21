@@ -2,12 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
+import { normalizeTime } from '@/lib/booking-availability'
 
 type Service = { id: string; name: string; duration_minutes: number; timezone: string; min_notice_minutes: number; max_advance_days: number; buffer_minutes: number; booking_interval_minutes?: number }
 type Interval = { weekday: number; start_time: string; end_time: string; enabled: boolean }
 type Block = { id: string; starts_at?: string; ends_at?: string; blocked_date?: string; reason: string | null }
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const field = 'h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+const normalizeIntervals = (items: Interval[]): Interval[] => items.map((item) => ({
+  ...item,
+  start_time: normalizeTime(item.start_time) ?? '',
+  end_time: normalizeTime(item.end_time) ?? '',
+}))
 
 export default function AvailabilitySettings() {
   const [services, setServices] = useState<Service[]>([])
@@ -36,7 +42,7 @@ export default function AvailabilitySettings() {
     ])
     const [availabilityData, blocksData] = await Promise.all([availabilityResponse.json(), blocksResponse.json()])
     if (!availabilityResponse.ok || !blocksResponse.ok) throw new Error(availabilityData.error || blocksData.error || 'Unable to load availability.')
-    setIntervals(availabilityData.availability || [])
+    setIntervals(normalizeIntervals(availabilityData.availability || []))
     setBlocks(blocksData.blocks || [])
     const service = services.find((item) => item.id === id)
     if (service) setSettings({ timezone: service.timezone, min_notice_minutes: service.min_notice_minutes, max_advance_days: service.max_advance_days, buffer_minutes: service.buffer_minutes, booking_interval_minutes: service.booking_interval_minutes || service.duration_minutes || 30 })
@@ -54,7 +60,7 @@ export default function AvailabilitySettings() {
       const response = await fetch('/api/bookings/availability', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ serviceId, availability: intervals, ...settings }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Unable to save settings.')
-      setIntervals(data.availability || [])
+      setIntervals(normalizeIntervals(data.availability || []))
       setMessage('Availability settings saved. Public booking slots now use this schedule.')
       await loadServices()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to save settings.') }
