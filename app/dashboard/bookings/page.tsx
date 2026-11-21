@@ -306,10 +306,13 @@ export default function BookingsDashboard() {
   return (
     <main className="min-h-screen bg-[#f8faff] p-5 text-slate-950 lg:p-8">
       <div className="mx-auto max-w-6xl">
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">Bookings</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Appointments</h1>
-          <p className="mt-2 text-sm text-slate-500">Offer time with your audience and keep every appointment organized.</p>
+        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">Bookings</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Appointments</h1>
+            <p className="mt-2 text-sm text-slate-500">Offer time with your audience and keep every appointment organized.</p>
+          </div>
+          <a href="/dashboard/bookings/availability" className="inline-flex h-10 items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:self-auto"><Clock3 size={15} aria-hidden="true" />Manage availability</a>
         </header>
 
         {notice && <p role="status" className="mt-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>}
