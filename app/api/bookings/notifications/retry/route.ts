@@ -3,7 +3,7 @@ import { deliverBookingNotification } from '@/lib/booking-email-delivery'
 import { createClient } from '@/lib/supabase/server'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const emailNotificationTypes = ['confirmation', 'new_booking', 'creator_confirmation', 'creator_cancellation']
+const emailNotificationTypes = ['confirmation', 'new_booking', 'creator_confirmation', 'creator_cancellation', 'change_request_submitted', 'change_request_decision']
 
 export async function POST(request: Request) {
   const client = await createClient()

@@ -62,6 +62,35 @@ test('creator notification escapes untrusted customer notes in HTML', () => {
   assert.match(email.html, /&lt;script&gt;/)
 })
 
+test('change decision emails distinguish approved cancellation, approved reschedule, and rejection', () => {
+  const cancellation = buildBookingEmail('change_request_decision', {
+    ...booking,
+    status: 'cancelled',
+    requestType: 'cancellation',
+    requestStatus: 'approved',
+  })
+  const reschedule = buildBookingEmail('change_request_decision', {
+    ...booking,
+    requestType: 'reschedule',
+    requestStatus: 'approved',
+    requestedStartsAt: '2026-12-02T04:30:00.000Z',
+  })
+  const rejected = buildBookingEmail('change_request_decision', {
+    ...booking,
+    requestType: 'reschedule',
+    requestStatus: 'rejected',
+  })
+
+  assert.match(cancellation?.subject ?? '', /cancellation approved/i)
+  assert.match(cancellation?.text ?? '', /appointment has been cancelled/i)
+  assert.match(cancellation?.text ?? '', /Booking status: Cancelled/)
+  assert.match(reschedule?.subject ?? '', /reschedule approved/i)
+  assert.match(reschedule?.text ?? '', /moved to the requested time/i)
+  assert.match(reschedule?.text ?? '', /Requested time:/)
+  assert.match(rejected?.text ?? '', /request was declined/i)
+  assert.match(rejected?.text ?? '', /existing appointment remains unchanged/i)
+})
+
 test('notification retries reuse a stable provider idempotency key', () => {
   const notificationId = 'd05f7715-52ef-43e7-9453-f7f166914d40'
 

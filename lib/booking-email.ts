@@ -3,6 +3,8 @@ export type BookingEmailEventType =
   | 'new_booking'
   | 'creator_confirmation'
   | 'creator_cancellation'
+  | 'change_request_submitted'
+  | 'change_request_decision'
 
 export type BookingEmailDetails = {
   serviceName: string
@@ -13,6 +15,10 @@ export type BookingEmailDetails = {
   startsAt: string
   timezone: string
   status: string
+  requestType?: string | null
+  requestReason?: string | null
+  requestedStartsAt?: string | null
+  requestStatus?: string | null
 }
 
 export type BookingEmailRecipient = {
@@ -81,7 +87,7 @@ function statusLabel(status: string) {
   return statusLabels[status] ?? (safeHeader(status) || 'Unknown')
 }
 
-function emailCopy(eventType: BookingEmailEventType, status: string) {
+function emailCopy(eventType: BookingEmailEventType, status: string, requestStatus?: string | null, requestType?: string | null) {
   if (eventType === 'new_booking') {
     return status === 'pending'
       ? { subject: 'New booking request', intro: 'A customer requested an appointment.' }
@@ -90,6 +96,23 @@ function emailCopy(eventType: BookingEmailEventType, status: string) {
 
   if (eventType === 'creator_cancellation') {
     return { subject: 'Booking cancelled', intro: 'Your appointment has been cancelled.' }
+  }
+
+  if (eventType === 'change_request_submitted') {
+    return { subject: 'Customer booking change request', intro: 'A customer submitted a booking change request.' }
+  }
+  if (eventType === 'change_request_decision') {
+    const requestLabel = requestType === 'cancellation' ? 'cancellation' : 'rescheduling'
+    if (requestStatus === 'approved' && requestType === 'cancellation') {
+      return { subject: 'Booking cancellation approved', intro: 'Your cancellation request has been approved. Your appointment has been cancelled.' }
+    }
+    if (requestStatus === 'approved' && requestType === 'reschedule') {
+      return { subject: 'Booking reschedule approved', intro: 'Your rescheduling request has been approved. Your appointment has been moved to the requested time.' }
+    }
+    if (requestStatus === 'rejected') {
+      return { subject: `Booking ${requestLabel} request declined`, intro: `Your ${requestLabel} request was declined. Your existing appointment remains unchanged.` }
+    }
+    return { subject: 'Booking request update', intro: `Your ${requestLabel} request has been updated.` }
   }
 
   if (eventType === 'creator_confirmation') {
@@ -112,12 +135,12 @@ export function buildBookingEmail(
   booking: BookingEmailDetails,
   creator: BookingEmailRecipient | null = null,
 ): BookingEmail | null {
-  const isCreatorEmail = eventType === 'new_booking'
+  const isCreatorEmail = eventType === 'new_booking' || eventType === 'change_request_submitted'
   const recipient = isCreatorEmail ? creator?.email : booking.customerEmail
   if (!recipient) return null
 
   const { date, time } = formatAppointment(booking.startsAt, booking.timezone)
-  const copy = emailCopy(eventType, booking.status)
+  const copy = emailCopy(eventType, booking.status, booking.requestStatus, booking.requestType)
   const serviceName = safeHeader(booking.serviceName) || 'Appointment'
   const greetingName = isCreatorEmail ? creator?.name || 'there' : booking.customerName
   const rows: Array<[string, string]> = [
@@ -132,6 +155,9 @@ export function buildBookingEmail(
     if (booking.customerPhone) rows.push(['Customer phone', booking.customerPhone])
     if (booking.customerNote) rows.push(['Customer note', booking.customerNote])
   }
+  if (booking.requestType) rows.push(['Request', booking.requestType], ['Reason', booking.requestReason || 'Not provided'])
+  if (booking.requestedStartsAt) rows.push(['Requested time', formatAppointment(booking.requestedStartsAt, booking.timezone).date + ' at ' + formatAppointment(booking.requestedStartsAt, booking.timezone).time])
+  if (booking.requestStatus) rows.push(['Request status', booking.requestStatus])
 
   const htmlRows = rows.map(([label, value]) => (
     `<tr><th align="left" style="padding:8px 16px 8px 0;color:#475569;font-weight:500;vertical-align:top">${escapeHtml(label)}</th><td style="padding:8px 0;color:#0f172a">${escapeHtml(value)}</td></tr>`

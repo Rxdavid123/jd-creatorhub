@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
-import { CalendarDays, Check, Clock3, MapPin } from 'lucide-react'
-import { displayTime } from '@/lib/bookings'
-export default async function BookingConfirmation({ params }: { params: Promise<{ token: string }> }) { const { token } = await params; const client = await createClient(); const { data: booking } = await client.from('bookings').select('id,customer_name,customer_email,starts_at,ends_at,timezone,status,payment_status,booking_services(name,description,location_type,location_details)').eq('public_token', token).maybeSingle(); if (!booking) notFound(); const service = Array.isArray(booking.booking_services) ? booking.booking_services[0] : booking.booking_services; return <main className="flex min-h-screen items-center justify-center bg-[#f8faff] px-5 py-10 text-slate-950"><section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-7 shadow-sm lg:p-9"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><Check size={22} /></div><p className="mt-6 text-sm font-semibold text-emerald-600">Booking {booking.status}</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{service?.name || 'Appointment confirmed'}</h1><p className="mt-3 text-slate-500">Thanks, {booking.customer_name}. Your appointment details are below.</p><div className="mt-7 space-y-4 rounded-2xl bg-slate-50 p-5 text-sm"><p className="flex gap-3"><CalendarDays size={18} className="text-blue-500" />{displayTime(booking.starts_at, booking.timezone)}</p><p className="flex gap-3"><Clock3 size={18} className="text-blue-500" />{booking.timezone}</p><p className="flex gap-3"><MapPin size={18} className="text-blue-500" />{service?.location_type === 'online' ? 'Online appointment' : service?.location_details || 'In-person appointment'}</p></div><p className="mt-6 text-xs text-slate-400">A confirmation email is not configured yet. Save this secure booking link.</p></section></main> }
+import { CustomerBookingPanel } from '@/components/booking/customer-booking-panel'
+
+export default async function BookingConfirmation({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params
+  return <CustomerBookingPanel token={token} />
+}

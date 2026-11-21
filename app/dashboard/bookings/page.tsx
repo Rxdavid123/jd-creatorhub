@@ -25,6 +25,8 @@ type BookingNotification = {
   sent_at: string | null
 }
 
+type BookingChangeRequest = { id: string; request_type: 'cancellation' | 'reschedule'; reason: string; requested_starts_at: string | null; status: string; created_at: string }
+
 type Booking = {
   id: string
   customer_name: string
@@ -37,6 +39,7 @@ type Booking = {
   payment_status: string
   booking_services?: { name: string; timezone: string } | { name: string; timezone: string }[]
   booking_notifications?: BookingNotification[]
+  booking_change_requests?: BookingChangeRequest[]
 }
 
 type Form = {
@@ -66,6 +69,8 @@ const emailNotificationLabels: Record<string, string> = {
   new_booking: 'Creator booking alert',
   creator_confirmation: 'Customer confirmation update',
   creator_cancellation: 'Booking cancellation update',
+  change_request_submitted: 'Customer change request',
+  change_request_decision: 'Customer request decision',
 }
 
 function formatBookingDateTime(startsAt: string, timezone: string) {
@@ -227,6 +232,18 @@ export default function BookingsDashboard() {
     } finally {
       setActionBusy(null)
     }
+  }
+
+  async function decideRequest(requestId: string, decision: 'approved' | 'rejected') {
+    setActionBusy(requestId); setError(''); setNotice('')
+    try {
+      const response = await fetch('/api/bookings/customer/manage', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId, decision }) })
+      const data = await response.json()
+      if (!response.ok) { setError(data.error || 'Unable to update request.'); return }
+      setNotice(`Request ${decision}.`)
+      await load()
+    } catch { setError('Unable to reach the booking server.') }
+    finally { setActionBusy(null) }
   }
 
   async function retryNotification(notificationId: string) {
@@ -394,6 +411,12 @@ export default function BookingsDashboard() {
                           {['pending', 'confirmed'].includes(booking.status) && <button type="button" disabled={actionBusy === booking.id} onClick={() => void action(booking.id, 'cancelled')} className="rounded-lg border border-red-200 px-3 py-2 text-xs text-red-600 disabled:opacity-50">Cancel</button>}
                         </div>
                       </div>
+
+                      {(booking.booking_change_requests || []).filter((request) => request.status === 'pending').map((request) => (
+                        <section key={request.id} className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4" aria-label="Pending customer request">
+                          <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold capitalize">Customer {request.request_type} request</h3><p className="mt-1 text-sm text-slate-700">Reason: {request.reason}</p><p className="mt-1 text-xs text-slate-600">Current time: {formatBookingDateTime(booking.starts_at, booking.timezone || 'UTC')}</p>{request.requested_starts_at && <p className="mt-1 text-xs text-slate-600">Requested time: {formatBookingDateTime(request.requested_starts_at, booking.timezone || 'UTC')}</p>}</div><div className="flex gap-2"><button type="button" disabled={actionBusy === request.id} onClick={() => void decideRequest(request.id, 'approved')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button><button type="button" disabled={actionBusy === request.id} onClick={() => void decideRequest(request.id, 'rejected')} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold disabled:opacity-50">Reject</button></div></div>
+                        </section>
+                      ))}
 
                       <div className="mt-4 border-t border-slate-100 pt-3">
                         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email notifications</h3>
