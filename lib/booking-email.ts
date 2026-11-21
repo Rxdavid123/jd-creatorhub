@@ -87,7 +87,7 @@ function statusLabel(status: string) {
   return statusLabels[status] ?? (safeHeader(status) || 'Unknown')
 }
 
-function emailCopy(eventType: BookingEmailEventType, status: string) {
+function emailCopy(eventType: BookingEmailEventType, status: string, requestStatus?: string | null, requestType?: string | null) {
   if (eventType === 'new_booking') {
     return status === 'pending'
       ? { subject: 'New booking request', intro: 'A customer requested an appointment.' }
@@ -102,7 +102,17 @@ function emailCopy(eventType: BookingEmailEventType, status: string) {
     return { subject: 'Customer booking change request', intro: 'A customer submitted a booking change request.' }
   }
   if (eventType === 'change_request_decision') {
-    return { subject: 'Booking request update', intro: `Your ${status} request has been ${status}.` }
+    const requestLabel = requestType === 'cancellation' ? 'cancellation' : 'rescheduling'
+    if (requestStatus === 'approved' && requestType === 'cancellation') {
+      return { subject: 'Booking cancellation approved', intro: 'Your cancellation request has been approved. Your appointment has been cancelled.' }
+    }
+    if (requestStatus === 'approved' && requestType === 'reschedule') {
+      return { subject: 'Booking reschedule approved', intro: 'Your rescheduling request has been approved. Your appointment has been moved to the requested time.' }
+    }
+    if (requestStatus === 'rejected') {
+      return { subject: `Booking ${requestLabel} request declined`, intro: `Your ${requestLabel} request was declined. Your existing appointment remains unchanged.` }
+    }
+    return { subject: 'Booking request update', intro: `Your ${requestLabel} request has been updated.` }
   }
 
   if (eventType === 'creator_confirmation') {
@@ -130,7 +140,7 @@ export function buildBookingEmail(
   if (!recipient) return null
 
   const { date, time } = formatAppointment(booking.startsAt, booking.timezone)
-  const copy = emailCopy(eventType, booking.status)
+  const copy = emailCopy(eventType, booking.status, booking.requestStatus, booking.requestType)
   const serviceName = safeHeader(booking.serviceName) || 'Appointment'
   const greetingName = isCreatorEmail ? creator?.name || 'there' : booking.customerName
   const rows: Array<[string, string]> = [

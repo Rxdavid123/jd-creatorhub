@@ -204,7 +204,7 @@ async function deliverWithClient(
     customerNote: booking.customer_note,
     startsAt: booking.starts_at,
     timezone: booking.timezone,
-    status: notification.notification_type === 'change_request_decision' ? requestDetails?.status || booking.status : booking.status,
+    status: booking.status,
     requestType: requestDetails?.request_type,
     requestReason: requestDetails?.reason,
     requestedStartsAt: requestDetails?.requested_starts_at,
