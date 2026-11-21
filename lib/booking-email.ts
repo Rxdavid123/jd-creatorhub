@@ -3,6 +3,8 @@ export type BookingEmailEventType =
   | 'new_booking'
   | 'creator_confirmation'
   | 'creator_cancellation'
+  | 'change_request_submitted'
+  | 'change_request_decision'
 
 export type BookingEmailDetails = {
   serviceName: string
@@ -13,6 +15,10 @@ export type BookingEmailDetails = {
   startsAt: string
   timezone: string
   status: string
+  requestType?: string | null
+  requestReason?: string | null
+  requestedStartsAt?: string | null
+  requestStatus?: string | null
 }
 
 export type BookingEmailRecipient = {
@@ -92,6 +98,13 @@ function emailCopy(eventType: BookingEmailEventType, status: string) {
     return { subject: 'Booking cancelled', intro: 'Your appointment has been cancelled.' }
   }
 
+  if (eventType === 'change_request_submitted') {
+    return { subject: 'Customer booking change request', intro: 'A customer submitted a booking change request.' }
+  }
+  if (eventType === 'change_request_decision') {
+    return { subject: 'Booking request update', intro: `Your ${status} request has been ${status}.` }
+  }
+
   if (eventType === 'creator_confirmation') {
     return { subject: 'Booking confirmed', intro: 'The creator confirmed your appointment.' }
   }
@@ -112,7 +125,7 @@ export function buildBookingEmail(
   booking: BookingEmailDetails,
   creator: BookingEmailRecipient | null = null,
 ): BookingEmail | null {
-  const isCreatorEmail = eventType === 'new_booking'
+  const isCreatorEmail = eventType === 'new_booking' || eventType === 'change_request_submitted'
   const recipient = isCreatorEmail ? creator?.email : booking.customerEmail
   if (!recipient) return null
 
@@ -132,6 +145,9 @@ export function buildBookingEmail(
     if (booking.customerPhone) rows.push(['Customer phone', booking.customerPhone])
     if (booking.customerNote) rows.push(['Customer note', booking.customerNote])
   }
+  if (booking.requestType) rows.push(['Request', booking.requestType], ['Reason', booking.requestReason || 'Not provided'])
+  if (booking.requestedStartsAt) rows.push(['Requested time', formatAppointment(booking.requestedStartsAt, booking.timezone).date + ' at ' + formatAppointment(booking.requestedStartsAt, booking.timezone).time])
+  if (booking.requestStatus) rows.push(['Request status', booking.requestStatus])
 
   const htmlRows = rows.map(([label, value]) => (
     `<tr><th align="left" style="padding:8px 16px 8px 0;color:#475569;font-weight:500;vertical-align:top">${escapeHtml(label)}</th><td style="padding:8px 0;color:#0f172a">${escapeHtml(value)}</td></tr>`

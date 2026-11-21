@@ -12,7 +12,7 @@ function adminClient() {
 
 function safeError(error: { message?: string }) {
   const message = error.message || ''
-  const known = ['booking_not_found', 'booking_not_active', 'request_pending', 'invalid_request', 'outside_booking_window', 'outside_availability', 'blocked_date', 'blocked_time', 'slot_taken']
+  const known = ['booking_not_found', 'booking_not_active', 'request_pending', 'request_not_pending', 'request_not_found', 'not_owner', 'invalid_request', 'outside_booking_window', 'outside_availability', 'blocked_date', 'blocked_time', 'slot_taken']
   return known.find((code) => message.includes(code)) || 'request_failed'
 }
 
@@ -32,7 +32,7 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
     if (typeof metadata.full_name === 'string') creatorName = metadata.full_name
     else if (typeof metadata.name === 'string') creatorName = metadata.name
   }
-  return NextResponse.json({ booking: { ...booking, booking_services: service ? { name: service.name, description: service.description, location_type: service.location_type, location_details: service.location_details } : null }, creatorName, requests: requests || [] })
+  return NextResponse.json({ booking: { customer_name: booking.customer_name, customer_email: booking.customer_email, customer_phone: booking.customer_phone, customer_note: booking.customer_note, starts_at: booking.starts_at, ends_at: booking.ends_at, timezone: booking.timezone, status: booking.status, payment_status: booking.payment_status, booking_services: service ? { name: service.name, description: service.description, location_type: service.location_type, location_details: service.location_details } : null }, creatorName, requests: requests || [] })
 }
 
 export async function POST(request: Request, context: { params: Promise<{ token: string }> }) {
@@ -49,8 +49,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   const { data, error } = await client.rpc('submit_booking_change_request', { p_token: token, p_request_type: type, p_reason: reason, p_requested_starts_at: requestedAt })
   if (error) return NextResponse.json({ error: safeError(error) }, { status: error.message.includes('booking_not_found') ? 404 : 409 })
   const result = data as { booking_id: string }
-  await client.from('booking_notifications').insert({ booking_id: result.booking_id, notification_type: 'change_request_submitted', status: 'pending' })
-  await deliverBookingNotificationsForBooking(result.booking_id, ['change_request_submitted' as never])
+  await deliverBookingNotificationsForBooking(result.booking_id, ['change_request_submitted'])
   return NextResponse.json({ request: data }, { status: 201 })
 }
 
@@ -65,7 +64,6 @@ export async function PATCH(request: Request) {
   const { data, error } = await client.rpc('decide_booking_change_request', { p_request_id: body.requestId, p_creator_id: user.id, p_decision: body.decision })
   if (error) return NextResponse.json({ error: safeError(error) }, { status: error.message.includes('not_owner') ? 403 : 409 })
   const result = data as { booking_id: string }
-  await client.from('booking_notifications').insert({ booking_id: result.booking_id, notification_type: 'change_request_decision', status: 'pending' })
-  await deliverBookingNotificationsForBooking(result.booking_id, ['change_request_decision' as never])
+  await deliverBookingNotificationsForBooking(result.booking_id, ['change_request_decision'])
   return NextResponse.json({ request: data })
 }

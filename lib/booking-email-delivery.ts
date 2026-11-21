@@ -15,6 +15,8 @@ const EMAIL_EVENT_TYPES: BookingEmailEventType[] = [
   'new_booking',
   'creator_confirmation',
   'creator_cancellation',
+  'change_request_submitted',
+  'change_request_decision',
 ]
 
 export type BookingEmailDeliveryStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'not_configured'
@@ -87,7 +89,7 @@ async function deliverWithClient(
 ): Promise<BookingEmailDeliveryResult> {
   const { data: notification, error: notificationError } = await client
     .from('booking_notifications')
-    .select('id,booking_id,notification_type,status,attempt_count,scheduled_for')
+    .select('id,booking_id,notification_type,status,attempt_count,scheduled_for,change_request_id')
     .eq('id', eventId)
     .maybeSingle()
 
@@ -169,8 +171,16 @@ async function deliverWithClient(
     return failNotification(client, eventId, 'superseded_by_newer_booking_status')
   }
 
+  let requestDetails: { request_type: string; reason: string; requested_starts_at: string | null; status: string } | null = null
+  if (notification.notification_type === 'change_request_submitted' || notification.notification_type === 'change_request_decision') {
+    if (!notification.change_request_id) return failNotification(client, eventId, 'request_context_unavailable')
+    const { data: request } = await client.from('booking_change_requests').select('request_type,reason,requested_starts_at,status').eq('id', notification.change_request_id).maybeSingle()
+    if (!request) return failNotification(client, eventId, 'request_context_unavailable')
+    requestDetails = request
+  }
+
   let creator: BookingEmailRecipient | null = null
-  if (notification.notification_type === 'new_booking') {
+  if (notification.notification_type === 'new_booking' || notification.notification_type === 'change_request_submitted') {
     const { data: creatorResult, error: creatorError } = await client.auth.admin.getUserById(booking.creator_id)
     if (creatorError || !creatorResult.user?.email) {
       logDeliveryError(eventId, 'creator_recipient_lookup_failed', creatorError?.status?.toString())
@@ -194,7 +204,11 @@ async function deliverWithClient(
     customerNote: booking.customer_note,
     startsAt: booking.starts_at,
     timezone: booking.timezone,
-    status: booking.status,
+    status: notification.notification_type === 'change_request_decision' ? requestDetails?.status || booking.status : booking.status,
+    requestType: requestDetails?.request_type,
+    requestReason: requestDetails?.reason,
+    requestedStartsAt: requestDetails?.requested_starts_at,
+    requestStatus: requestDetails?.status,
   }, creator)
 
   if (!email) return failNotification(client, eventId, 'recipient_unavailable')
