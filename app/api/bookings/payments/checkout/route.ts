@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createBookingPaymentAdminClient, getRazorpayTestCredentials, RazorpayConfigurationError } from '@/lib/booking-payment-server'
+import { createBookingPaymentAdminClient, getRazorpayTestCredentials, getRazorpayRuntimeDiagnostics, RazorpayConfigurationError } from '@/lib/booking-payment-server'
+
+export const runtime = 'nodejs'
 
 function rpcErrorStatus(message: string) {
   if (message.includes('booking_not_found')) return 404
@@ -21,7 +23,10 @@ export async function POST(request: Request) {
     credentials = getRazorpayTestCredentials()
   } catch (error) {
     if (error instanceof RazorpayConfigurationError) {
-      console.error('[booking-payment] Razorpay configuration check failed', { code: error.code })
+      console.error('[booking-payment] Razorpay configuration check failed', {
+        code: error.code,
+        ...getRazorpayRuntimeDiagnostics(),
+      })
       return NextResponse.json({
         error: 'Test Mode checkout is temporarily unavailable.',
         code: error.code,

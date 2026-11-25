@@ -1,11 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
-import { getRazorpayTestConfigurationErrorCode, type RazorpayConfigurationErrorCode } from '@/lib/razorpay-booking-security'
+import {
+  getRazorpayConfigurationDiagnostics,
+  getRazorpayTestConfigurationErrorCode,
+  type RazorpayConfigurationErrorCode,
+} from '@/lib/razorpay-booking-security'
 
 export function createBookingPaymentAdminClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !serviceRoleKey) throw new Error('Booking payment server configuration is missing.')
   return createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+export function getRazorpayRuntimeDiagnostics() {
+  return getRazorpayConfigurationDiagnostics(
+    process.env.RAZORPAY_KEY_ID,
+    process.env.RAZORPAY_KEY_SECRET,
+    process.env.VERCEL_ENV ?? 'unknown',
+    process.env.NEXT_RUNTIME ?? 'nodejs',
+  )
 }
 
 export class RazorpayConfigurationError extends Error {

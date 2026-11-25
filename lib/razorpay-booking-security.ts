@@ -19,6 +19,21 @@ export function getRazorpayTestConfigurationErrorCode(
   return null
 }
 
+export function getRazorpayConfigurationDiagnostics(
+  keyId: string | undefined,
+  keySecret: string | undefined,
+  deploymentEnvironment: string,
+  runtime: string,
+) {
+  return {
+    razorpayKeyIdPresent: Boolean(keyId?.trim()),
+    razorpayKeyIdHasTestPrefix: typeof keyId === 'string' && keyId.startsWith('rzp_test_'),
+    razorpayKeySecretPresent: Boolean(keySecret?.trim()),
+    deploymentEnvironment,
+    runtime,
+  }
+}
+
 export function verifyRazorpayCheckoutSignature(
   orderId: string,
   paymentId: string,
