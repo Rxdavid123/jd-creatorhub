@@ -20,9 +20,21 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
   const { token } = await context.params
   if (!/^[a-f0-9]{48}$/i.test(token)) return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
   const client = adminClient()
-  const { data: booking, error } = await client.from('bookings').select('id,service_id,customer_name,customer_email,customer_phone,customer_note,starts_at,ends_at,timezone,status,payment_status,booking_services(name,description,location_type,location_details,creator_id)').eq('public_token', token).maybeSingle()
+  let { data: booking, error } = await client.from('bookings')
+    .select('id,service_id,customer_name,customer_email,customer_phone,customer_note,starts_at,ends_at,timezone,status,payment_status,payment_expires_at,price_minor,currency,booking_services(name,description,duration_minutes,location_type,location_details,creator_id)')
+    .eq('public_token', token).maybeSingle()
   if (error || !booking) return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
-  const { data: requests } = await client.from('booking_change_requests').select('request_type,reason,requested_starts_at,status,created_at,decided_at').eq('booking_id', booking.id).order('created_at', { ascending: false }).limit(5)
+  if (booking.status === 'pending' && booking.payment_expires_at && Date.parse(booking.payment_expires_at) <= Date.now()) {
+    const { error: expiryError } = await client.rpc('expire_booking_payment_holds', { p_service_id: booking.service_id })
+    if (expiryError) return NextResponse.json({ error: 'Unable to refresh this booking.' }, { status: 503 })
+    const refreshed = await client.from('bookings').select('id,service_id,customer_name,customer_email,customer_phone,customer_note,starts_at,ends_at,timezone,status,payment_status,payment_expires_at,price_minor,currency,booking_services(name,description,duration_minutes,location_type,location_details,creator_id)').eq('public_token', token).maybeSingle()
+    if (refreshed.error || !refreshed.data) return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
+    booking = refreshed.data
+  }
+  const [{ data: requests }, { data: latestPayment }] = await Promise.all([
+    client.from('booking_change_requests').select('request_type,reason,requested_starts_at,status,created_at,decided_at').eq('booking_id', booking.id).order('created_at', { ascending: false }).limit(5),
+    client.from('booking_payments').select('status,failure_reason,expires_at').eq('booking_id', booking.id).order('attempt_number', { ascending: false }).limit(1).maybeSingle(),
+  ])
   const relation = booking.booking_services
   const service = Array.isArray(relation) ? relation[0] : relation
   let creatorName = 'Your creator'
@@ -32,7 +44,38 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
     if (typeof metadata.full_name === 'string') creatorName = metadata.full_name
     else if (typeof metadata.name === 'string') creatorName = metadata.name
   }
-  return NextResponse.json({ booking: { customer_name: booking.customer_name, customer_email: booking.customer_email, customer_phone: booking.customer_phone, customer_note: booking.customer_note, starts_at: booking.starts_at, ends_at: booking.ends_at, timezone: booking.timezone, status: booking.status, payment_status: booking.payment_status, booking_services: service ? { name: service.name, description: service.description, location_type: service.location_type, location_details: service.location_details } : null }, creatorName, requests: requests || [] })
+  const paymentMessage = latestPayment?.status === 'failed'
+    ? 'Payment failed. Retry while the reservation is active.'
+    : latestPayment?.status === 'expired' || booking.payment_status === 'expired'
+      ? 'The payment reservation has expired.'
+      : null
+  return NextResponse.json({
+    booking: {
+      customer_name: booking.customer_name,
+      customer_email: booking.customer_email,
+      customer_phone: booking.customer_phone,
+      customer_note: booking.customer_note,
+      starts_at: booking.starts_at,
+      ends_at: booking.ends_at,
+      timezone: booking.timezone,
+      status: booking.status,
+      payment_status: booking.payment_status,
+      payment_expires_at: booking.payment_expires_at,
+      price_minor: Number(booking.price_minor),
+      currency: booking.currency,
+      latest_payment_status: latestPayment?.status || null,
+      payment_message: paymentMessage,
+      booking_services: service ? {
+        name: service.name,
+        description: service.description,
+        duration_minutes: service.duration_minutes,
+        location_type: service.location_type,
+        location_details: service.location_details,
+      } : null,
+    },
+    creatorName,
+    requests: requests || [],
+  })
 }
 
 export async function POST(request: Request, context: { params: Promise<{ token: string }> }) {

@@ -100,11 +100,11 @@ export async function POST(request: Request) {
     return errorResponse('BOOKING_TEMPORARILY_UNAVAILABLE', 'We could not verify this service right now. Please refresh and try again.', 503)
   }
 
-  let service: { id: string; timezone: string } | null = null
+  let service: { id: string; timezone: string; price_minor: number; currency: string } | null = null
   let serviceError: { code?: string | null; message?: string | null } | null = null
   try {
     const lookup = await client.from('booking_services')
-      .select('id,timezone').eq('id', serviceId).eq('status', 'published').maybeSingle()
+      .select('id,timezone,price_minor,currency').eq('id', serviceId).eq('status', 'published').maybeSingle()
     service = lookup.data
     serviceError = lookup.error
   } catch (error) {
@@ -120,6 +120,12 @@ export async function POST(request: Request) {
   if (timezone !== service.timezone) {
     console.warn('[bookings] public request rejected', { category: 'timezone_mismatch' })
     return errorResponse('INVALID_APPOINTMENT', 'Please refresh the page and choose an available time.', 400)
+  }
+  if ((body.priceMinor !== undefined || body.currency !== undefined)
+    && (!Number.isSafeInteger(Number(body.priceMinor))
+      || Number(body.priceMinor) !== Number(service.price_minor)
+      || body.currency !== service.currency)) {
+    return errorResponse('PRICE_CHANGED', 'The service price changed. Refresh the page to review the current price.', 409)
   }
 
   let startsAt: string
@@ -168,7 +174,7 @@ export async function POST(request: Request) {
     }
 
     const bookingId = typeof confirmation.booking.id === 'string' ? confirmation.booking.id : null
-    if (bookingId) {
+    if (bookingId && confirmation.booking.payment_status === 'not_required') {
       try {
         after(async () => {
           try {
@@ -182,7 +188,17 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json(confirmation, { status: 201 })
+    return NextResponse.json({
+      confirmationUrl: confirmation.confirmationUrl,
+      paymentRequired: confirmation.booking.payment_status === 'pending',
+      paymentExpiresAt: confirmation.booking.payment_expires_at || null,
+      booking: {
+        status: confirmation.booking.status,
+        payment_status: confirmation.booking.payment_status,
+        starts_at: confirmation.booking.starts_at,
+        timezone: confirmation.booking.timezone,
+      },
+    }, { status: 201 })
   } catch (error) {
     logDatabaseFailure('create_public_booking', error, serviceId, sensitiveValues)
     return errorResponse('BOOKING_TEMPORARILY_UNAVAILABLE', "We couldn't complete this booking right now. Please try again shortly or contact the service owner.", 503)

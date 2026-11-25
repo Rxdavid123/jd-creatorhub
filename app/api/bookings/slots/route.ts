@@ -27,6 +27,8 @@ export async function GET(request: Request) {
   const { data: service, error: serviceError } = await client.from('booking_services').select('id,duration_minutes,buffer_minutes,min_notice_minutes,max_advance_days,timezone,status').eq('id', serviceId).eq('status', 'published').maybeSingle()
   if (serviceError) return NextResponse.json({ error: 'Unable to load service availability.' }, { status: 500 })
   if (!service) return NextResponse.json({ error: 'Service not found.' }, { status: 404 })
+  const { error: expiryError } = await admin.rpc('expire_booking_payment_holds', { p_service_id: service.id })
+  if (expiryError) return NextResponse.json({ error: 'Unable to refresh booking availability.' }, { status: 503 })
   const today = isoDate(new Date().toISOString(), service.timezone)
   const latest = new Date(Date.now() + service.max_advance_days * 86400000)
   if (date < today || date > isoDate(latest.toISOString(), service.timezone)) return NextResponse.json({ slots: [], timezone: service.timezone, reason: 'outside_booking_window' })
