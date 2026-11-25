@@ -91,6 +91,21 @@ test('change decision emails distinguish approved cancellation, approved resched
   assert.match(rejected?.text ?? '', /existing appointment remains unchanged/i)
 })
 
+test('paid appointment emails show captured amount and cancellation refund limits', () => {
+  const paidBooking = { ...booking, priceMinor: 10000, currency: 'INR', paymentStatus: 'captured' }
+  const confirmation = buildBookingEmail('confirmation', paidBooking)
+  const cancellation = buildBookingEmail('change_request_decision', {
+    ...paidBooking,
+    status: 'cancelled',
+    requestType: 'cancellation',
+    requestStatus: 'approved',
+  })
+
+  assert.match(confirmation?.text ?? '', /₹100\.00/)
+  assert.match(confirmation?.text ?? '', /Payment status: Paid/)
+  assert.match(cancellation?.text ?? '', /does not automatically issue a refund/i)
+})
+
 test('notification retries reuse a stable provider idempotency key', () => {
   const notificationId = 'd05f7715-52ef-43e7-9453-f7f166914d40'
 

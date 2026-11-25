@@ -4,7 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'JD CreatorHub — Your creator business, one powerful platform',
-  description: 'Create your storefront, sell digital products, manage customers and grow your online business from one place.',
+  description: 'Create your storefront, sell digital products, offer paid appointments, manage customers and grow your creator business from one place.',
   generator: 'v0.app',
   icons: {
     icon: [

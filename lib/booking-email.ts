@@ -8,6 +8,9 @@ export type BookingEmailEventType =
 
 export type BookingEmailDetails = {
   serviceName: string
+  priceMinor: number
+  currency: string
+  paymentStatus: string
   customerName: string
   customerEmail: string
   customerPhone?: string | null
@@ -40,6 +43,7 @@ const statusLabels: Record<string, string> = {
   cancelled: 'Cancelled',
   completed: 'Completed',
   no_show: 'No show',
+  expired: 'Payment reservation expired',
 }
 
 function escapeHtml(value: string) {
@@ -57,6 +61,15 @@ function escapeHtml(value: string) {
 
 function safeHeader(value: string) {
   return value.replace(/[\r\n\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function formatPaymentAmount(amountMinor: number, currency: string) {
+  return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountMinor / 100)
 }
 
 function formatAppointment(startsAt: string, timezone: string) {
@@ -87,7 +100,7 @@ function statusLabel(status: string) {
   return statusLabels[status] ?? (safeHeader(status) || 'Unknown')
 }
 
-function emailCopy(eventType: BookingEmailEventType, status: string, requestStatus?: string | null, requestType?: string | null) {
+function emailCopy(eventType: BookingEmailEventType, status: string, requestStatus?: string | null, requestType?: string | null, paymentStatus?: string) {
   if (eventType === 'new_booking') {
     return status === 'pending'
       ? { subject: 'New booking request', intro: 'A customer requested an appointment.' }
@@ -95,7 +108,12 @@ function emailCopy(eventType: BookingEmailEventType, status: string, requestStat
   }
 
   if (eventType === 'creator_cancellation') {
-    return { subject: 'Booking cancelled', intro: 'Your appointment has been cancelled.' }
+    return {
+      subject: 'Booking cancelled',
+      intro: paymentStatus === 'captured'
+        ? 'Your appointment has been cancelled. Cancellation does not automatically issue a refund; contact the creator about refund arrangements.'
+        : 'Your appointment has been cancelled.',
+    }
   }
 
   if (eventType === 'change_request_submitted') {
@@ -104,7 +122,12 @@ function emailCopy(eventType: BookingEmailEventType, status: string, requestStat
   if (eventType === 'change_request_decision') {
     const requestLabel = requestType === 'cancellation' ? 'cancellation' : 'rescheduling'
     if (requestStatus === 'approved' && requestType === 'cancellation') {
-      return { subject: 'Booking cancellation approved', intro: 'Your cancellation request has been approved. Your appointment has been cancelled.' }
+      return {
+        subject: 'Booking cancellation approved',
+        intro: paymentStatus === 'captured'
+          ? 'Your cancellation request has been approved. Your appointment has been cancelled. Approval does not automatically issue a refund; contact the creator about refund arrangements.'
+          : 'Your cancellation request has been approved. Your appointment has been cancelled.',
+      }
     }
     if (requestStatus === 'approved' && requestType === 'reschedule') {
       return { subject: 'Booking reschedule approved', intro: 'Your rescheduling request has been approved. Your appointment has been moved to the requested time.' }
@@ -140,7 +163,7 @@ export function buildBookingEmail(
   if (!recipient) return null
 
   const { date, time } = formatAppointment(booking.startsAt, booking.timezone)
-  const copy = emailCopy(eventType, booking.status, booking.requestStatus, booking.requestType)
+  const copy = emailCopy(eventType, booking.status, booking.requestStatus, booking.requestType, booking.paymentStatus)
   const serviceName = safeHeader(booking.serviceName) || 'Appointment'
   const greetingName = isCreatorEmail ? creator?.name || 'there' : booking.customerName
   const rows: Array<[string, string]> = [
@@ -149,6 +172,10 @@ export function buildBookingEmail(
     ['Time', time],
     ['Booking status', statusLabel(booking.status)],
   ]
+  if (booking.priceMinor > 0) {
+    rows.push(['Appointment amount', formatPaymentAmount(booking.priceMinor, booking.currency)])
+    rows.push(['Payment status', booking.paymentStatus === 'captured' ? 'Paid' : safeHeader(booking.paymentStatus)])
+  }
 
   if (isCreatorEmail) {
     rows.push(['Customer', booking.customerName], ['Customer email', booking.customerEmail])

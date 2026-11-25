@@ -150,7 +150,7 @@ async function deliverWithClient(
 
   const { data: booking, error: bookingError } = await client
     .from('bookings')
-    .select('id,creator_id,customer_name,customer_email,customer_phone,customer_note,starts_at,timezone,status,booking_services(name)')
+    .select('id,creator_id,customer_name,customer_email,customer_phone,customer_note,starts_at,timezone,status,payment_status,price_minor,currency,booking_services(name)')
     .eq('id', notification.booking_id)
     .maybeSingle()
 
@@ -198,6 +198,9 @@ async function deliverWithClient(
 
   const email = buildBookingEmail(notification.notification_type, {
     serviceName: service.name,
+    priceMinor: Number(booking.price_minor),
+    currency: booking.currency,
+    paymentStatus: booking.payment_status,
     customerName: booking.customer_name,
     customerEmail: booking.customer_email,
     customerPhone: booking.customer_phone,
