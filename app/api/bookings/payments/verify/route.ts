@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { deliverBookingNotificationsForBooking } from '@/lib/booking-email-delivery'
-import { createBookingPaymentAdminClient, getRazorpayTestCredentials } from '@/lib/booking-payment-server'
+import { createBookingPaymentAdminClient, getRazorpayTestCredentials, RazorpayConfigurationError } from '@/lib/booking-payment-server'
 import { matchesCapturedRazorpayPayment, verifyRazorpayCheckoutSignature } from '@/lib/razorpay-booking-security'
 
 export async function POST(request: Request) {
@@ -19,7 +19,14 @@ export async function POST(request: Request) {
   let credentials: ReturnType<typeof getRazorpayTestCredentials>
   try {
     credentials = getRazorpayTestCredentials()
-  } catch {
+  } catch (error) {
+    if (error instanceof RazorpayConfigurationError) {
+      console.error('[booking-payment] Razorpay configuration check failed', { code: error.code })
+      return NextResponse.json({
+        error: 'Test Mode payment verification is unavailable.',
+        code: error.code,
+      }, { status: 503 })
+    }
     return NextResponse.json({ error: 'Test Mode payment verification is unavailable.' }, { status: 503 })
   }
   if (!verifyRazorpayCheckoutSignature(orderId, paymentId, providedSignature, credentials.keySecret)) {

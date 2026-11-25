@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createClient } from '@supabase/supabase-js'
+import { resolveBookingEmailConfiguration } from '@/lib/booking-email-config'
 import {
   bookingNotificationIdempotencyKey,
   buildBookingEmail,
@@ -35,16 +36,6 @@ function createAdminClient() {
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-}
-
-function getSenderAddress() {
-  const configuredSender = process.env.RESEND_FROM_EMAIL?.trim()
-  if (configuredSender) return configuredSender
-
-  const domain = process.env.RESEND_EMAIL_DOMAIN?.trim()
-  return domain && /^[a-z0-9.-]+$/i.test(domain)
-    ? `JD CreatorHub <bookings@${domain}>`
-    : null
 }
 
 function logDeliveryError(eventId: string, reason: string, code?: string | null) {
@@ -216,10 +207,18 @@ async function deliverWithClient(
 
   if (!email) return failNotification(client, eventId, 'recipient_unavailable')
 
-  const apiKey = process.env.RESEND_API_KEY
-  const from = getSenderAddress()
-  if (!apiKey || !from) return failNotification(client, eventId, 'provider_configuration_missing')
+  const emailConfiguration = resolveBookingEmailConfiguration({
+    apiKey: process.env.RESEND_API_KEY,
+    fromEmail: process.env.RESEND_FROM_EMAIL,
+    domain: process.env.RESEND_EMAIL_DOMAIN,
+  })
+  if (!emailConfiguration.configured) {
+    logDeliveryError(eventId, emailConfiguration.reason)
+    return failNotification(client, eventId, emailConfiguration.reason)
+  }
 
+  const apiKey = process.env.RESEND_API_KEY as string
+  const from = emailConfiguration.from
   let response: Response
   try {
     response = await fetch('https://api.resend.com/emails', {

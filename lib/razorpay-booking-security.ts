@@ -4,6 +4,21 @@ export function isRazorpayTestKey(value: string | undefined): value is string {
   return typeof value === 'string' && /^rzp_test_[A-Za-z0-9]+$/.test(value)
 }
 
+export type RazorpayConfigurationErrorCode =
+  | 'RAZORPAY_TEST_KEY_ID_MISSING'
+  | 'RAZORPAY_KEY_ID_NOT_TEST_MODE'
+  | 'RAZORPAY_TEST_KEY_SECRET_MISSING'
+
+export function getRazorpayTestConfigurationErrorCode(
+  keyId: string | undefined,
+  keySecret: string | undefined,
+): RazorpayConfigurationErrorCode | null {
+  if (!keyId?.trim()) return 'RAZORPAY_TEST_KEY_ID_MISSING'
+  if (!isRazorpayTestKey(keyId)) return 'RAZORPAY_KEY_ID_NOT_TEST_MODE'
+  if (!keySecret?.trim()) return 'RAZORPAY_TEST_KEY_SECRET_MISSING'
+  return null
+}
+
 export function verifyRazorpayCheckoutSignature(
   orderId: string,
   paymentId: string,

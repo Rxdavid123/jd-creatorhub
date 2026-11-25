@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { isRazorpayTestKey } from '@/lib/razorpay-booking-security'
+import { getRazorpayTestConfigurationErrorCode, type RazorpayConfigurationErrorCode } from '@/lib/razorpay-booking-security'
 
 export function createBookingPaymentAdminClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -8,13 +8,21 @@ export function createBookingPaymentAdminClient() {
   return createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
+export class RazorpayConfigurationError extends Error {
+  constructor(readonly code: RazorpayConfigurationErrorCode) {
+    super('Razorpay Test Mode is not configured.')
+    this.name = 'RazorpayConfigurationError'
+  }
+}
+
 export function getRazorpayTestCredentials() {
   const keyId = process.env.RAZORPAY_KEY_ID
   const keySecret = process.env.RAZORPAY_KEY_SECRET
-  if (!isRazorpayTestKey(keyId) || !keySecret) throw new Error('Razorpay Test Mode is not configured.')
+  const errorCode = getRazorpayTestConfigurationErrorCode(keyId, keySecret)
+  if (errorCode) throw new RazorpayConfigurationError(errorCode)
   return {
-    keyId,
-    keySecret,
+    keyId: keyId as string,
+    keySecret: keySecret as string,
     authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`,
   }
 }
