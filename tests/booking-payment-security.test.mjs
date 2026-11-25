@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto'
 import test from 'node:test'
 import fs from 'node:fs'
 import { formatMinorAmount, isBookingCurrency, parseMajorAmount } from '../lib/booking-currency.ts'
-import { isRazorpayTestKey, matchesCapturedRazorpayPayment, verifyRazorpayCheckoutSignature } from '../lib/razorpay-booking-security.ts'
+import { getRazorpayTestConfigurationErrorCode, isRazorpayTestKey, matchesCapturedRazorpayPayment, verifyRazorpayCheckoutSignature } from '../lib/razorpay-booking-security.ts'
 
 const orderId = 'order_testOrder123'
 const paymentId = 'pay_testPayment456'
@@ -31,6 +31,21 @@ test('only Test Mode Razorpay keys are accepted for booking checkout', () => {
   assert.equal(isRazorpayTestKey('rzp_test_abc123'), true)
   assert.equal(isRazorpayTestKey('rzp_live_abc123'), false)
   assert.equal(isRazorpayTestKey(undefined), false)
+})
+
+test('Razorpay configuration checks classify missing credentials and reject Live Mode safely', () => {
+  assert.equal(getRazorpayTestConfigurationErrorCode(undefined, undefined), 'RAZORPAY_TEST_KEY_ID_MISSING')
+  assert.equal(getRazorpayTestConfigurationErrorCode('rzp_live_secretlike', 'never-log-this-secret'), 'RAZORPAY_KEY_ID_NOT_TEST_MODE')
+  assert.equal(getRazorpayTestConfigurationErrorCode('rzp_test_valid123', '   '), 'RAZORPAY_TEST_KEY_SECRET_MISSING')
+  assert.equal(getRazorpayTestConfigurationErrorCode('rzp_test_valid123', 'test-secret'), null)
+  assert.doesNotMatch(JSON.stringify({ code: getRazorpayTestConfigurationErrorCode('rzp_test_valid123', '') }), /test-secret|valid123/)
+})
+
+test('checkout returns a safe actionable configuration code without secret material', () => {
+  const route = fs.readFileSync('app/api/bookings/payments/checkout/route.ts', 'utf8')
+  assert.match(route, /code: error\.code/)
+  assert.match(route, /console\.error\('\[booking-payment\] Razorpay configuration check failed', \{ code: error\.code \}\)/)
+  assert.doesNotMatch(route, /keySecret|Buffer\.from/)
 })
 
 test('checkout signature rejects forged, incomplete, and mismatched identifiers', () => {

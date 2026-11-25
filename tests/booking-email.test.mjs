@@ -4,6 +4,7 @@ import {
   bookingNotificationIdempotencyKey,
   buildBookingEmail,
 } from '../lib/booking-email.ts'
+import { resolveBookingEmailConfiguration } from '../lib/booking-email-config.ts'
 
 const booking = {
   serviceName: 'Portfolio review',
@@ -104,6 +105,33 @@ test('paid appointment emails show captured amount and cancellation refund limit
   assert.match(confirmation?.text ?? '', /₹100\.00/)
   assert.match(confirmation?.text ?? '', /Payment status: Paid/)
   assert.match(cancellation?.text ?? '', /does not automatically issue a refund/i)
+})
+
+test('booking email config requires RESEND_API_KEY and a valid sender source', () => {
+  assert.deepEqual(resolveBookingEmailConfiguration({}), {
+    configured: false,
+    reason: 'resend_api_key_missing',
+  })
+  assert.deepEqual(resolveBookingEmailConfiguration({ apiKey: 'configured' }), {
+    configured: false,
+    reason: 'sender_missing',
+  })
+  assert.deepEqual(resolveBookingEmailConfiguration({ apiKey: 'configured', domain: 'bad domain' }), {
+    configured: false,
+    reason: 'sender_missing',
+  })
+})
+
+test('booking email config supports explicit sender or domain fallback without exposing API keys', () => {
+  assert.deepEqual(resolveBookingEmailConfiguration({
+    apiKey: 'do-not-return-this',
+    fromEmail: 'Bookings <bookings@example.com>',
+    domain: 'example.com',
+  }), { configured: true, from: 'Bookings <bookings@example.com>' })
+  assert.deepEqual(resolveBookingEmailConfiguration({ apiKey: 'do-not-return-this', domain: 'example.com' }), {
+    configured: true,
+    from: 'JD CreatorHub <bookings@example.com>',
+  })
 })
 
 test('notification retries reuse a stable provider idempotency key', () => {

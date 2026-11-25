@@ -21,7 +21,7 @@ type BookingPaymentActionProps = {
   onRefresh?: () => void
 }
 
-type CheckoutResponse = { keyId: string; orderId: string; amount: number; currency: string }
+type CheckoutResponse = { keyId: string; orderId: string; amount: number; currency: string; code?: string }
 
 type RazorpayResult = {
   razorpay_order_id: string
@@ -57,7 +57,8 @@ export function BookingPaymentAction({
       const checkout = await response.json() as CheckoutResponse & { error?: string }
       if (!response.ok) {
         if (response.status === 410) onRefresh?.()
-        throw new Error(checkout.error || 'Unable to start payment.')
+        const diagnostic = checkout.code ? ` Reference code: ${checkout.code}.` : ''
+        throw new Error(`${checkout.error || 'Unable to start payment.'}${diagnostic}`)
       }
 
       const razorpay = new window.Razorpay({
