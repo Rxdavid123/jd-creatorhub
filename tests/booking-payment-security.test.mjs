@@ -94,6 +94,28 @@ test('verification fetches provider state and shares atomic confirmation with we
   assert.match(route, /get_booking_payment_for_verification/)
 })
 
+test('confirmation locks the service and treats duplicate captures idempotently', () => {
+  const sql = fs.readFileSync('supabase/migrations/20261125120000_paid_appointment_bookings.sql', 'utf8')
+  assert.match(sql, /if p_token is null or p_token !~ '\^\[a-f0-9\]\{48\}\$'/)
+  assert.match(sql, /if attempt\.status = 'captured' then/)
+  assert.match(sql, /'duplicate', true/)
+  assert.match(sql, /pg_advisory_xact_lock/)
+  assert.match(sql, /unique \(booking_id, attempt_number\)/)
+})
+
+test('customer booking data is reachable only with its opaque token', () => {
+  const route = fs.readFileSync('app/api/bookings/customer/[token]/route.ts', 'utf8')
+  assert.match(route, /\^\[a-f0-9\]\{48\}\$/)
+  assert.match(route, /eq\('public_token', token\)/)
+  assert.doesNotMatch(route, /booking_id.*request\.json/)
+})
+
+test('webhook claims each event once and releases failed claims for provider retry', () => {
+  const route = fs.readFileSync('app/api/webhooks/razorpay/route.ts', 'utf8')
+  assert.match(route, /duplicateError\?\.code === '23505'/)
+  assert.match(route, /delete\(\)\.eq\('event_id', eventId\)/)
+})
+
 test('webhook uses raw-body authentication, dedupe, and the shared booking confirmation RPC', () => {
   const route = fs.readFileSync('app/api/webhooks/razorpay/route.ts', 'utf8')
   assert.match(route, /request\.text\(\)/)
